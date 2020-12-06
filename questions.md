@@ -1,0 +1,2 @@
+- What is "number of time steps for LSTM layer"
+- Doe truncating the set fuck with information?
