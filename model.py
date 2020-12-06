@@ -4,7 +4,12 @@ print('\n-\tLoading py torch')
 import torch
 from string import punctuation
 
-train_on_gpu = False
+dev = 'cpu'
+
+if torch.cuda.is_available():
+    dev = 'cuda'
+
+device = torch.device(dev)
 
 POSITIVE = None
 NEGATIVE = None
@@ -135,8 +140,8 @@ POSITIVE, POSTIVE_len = remove_reviews(POSITIVE, POSTIVE_len)
 NEGATIVE, NEGATIVE_len = remove_reviews(NEGATIVE, NEGATIVE_len)
 
 
-POSITIVE = pad_truncate(POSITIVE, POSTIVE_len, 200)
-NEGATIVE = pad_truncate(NEGATIVE, NEGATIVE_len, 200)
+POSITIVE = pad_truncate(POSITIVE, POSTIVE_len, 400)
+NEGATIVE = pad_truncate(NEGATIVE, NEGATIVE_len, 400)
 
 print("Post-filtering:")
 print(f"\t Positive reviews: {len(POSITIVE)}")
@@ -273,21 +278,17 @@ class SentimentLSTM(nn.Module):
 
         weight = next(self.parameters()).data
 
-        if (train_on_gpu):
-            hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().cuda(),
-                      weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().cuda())
-        else:
-            hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_(),
-                      weight.new(self.n_layers, batch_size, self.hidden_dim).zero_())
+        hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device),
+                    weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(device))
         
         return hidden
 
-print('\n-\Instantiating model\n')
+print('\n-\tInstantiating model\n')
 
 vocab_size = len(vocab_to_int)+1 # +1 for 0 padding
 output_size = 1
 embedding_dim = 400
-hidden_dim = 256
+hidden_dim = 500
 n_layers = 2
 
 net = SentimentLSTM(vocab_size, output_size, embedding_dim, hidden_dim, n_layers)
@@ -300,7 +301,6 @@ print(net)
 ########################
 
 print('\n-\tTraining the model\n')
-
 # Loss and optimization functions
 lr = 0.001 # Learning rate
 criterion = nn.BCELoss()
@@ -309,11 +309,11 @@ optimizer = torch.optim.Adam(net.parameters(), lr=lr)
 # Training params
 epochs = 4 # TODO: Play with this and look validation loss
 counter = 0
-print_every = 50
+print_every = 100
 clip = 5 # gradient clipping TODO:What?
 
-if train_on_gpu:
-    net.cuda()
+
+net.to(device)
 
 net.train()
 for e in range(epochs):
@@ -322,9 +322,6 @@ for e in range(epochs):
     # Batch loops
     for inputs, labels in train_loader:
         counter += 1
-        
-        if train_on_gpu:
-            inputs, labels = inputs.cuda(), labels.cuda()
 
         # Create new vars for the hidden state
         # Prevents backprop through entire training history TODO: What?
@@ -335,6 +332,7 @@ for e in range(epochs):
 
         # Run the model
         inputs = inputs.type(torch.LongTensor) # TODO: What?
+        inputs, labels = inputs.to(device), labels.to(device)
         output, h = net(inputs, h)
 
         # Calculate loss and backprop
@@ -357,11 +355,9 @@ for e in range(epochs):
                 # Creating new variables for the hidden state, otherwise
                 # we'd backprop through the entire training history
                 val_h = tuple([each.data for each in val_h])
-
-                if(train_on_gpu):
-                    inputs, labels = inputs.cuda(), labels.cuda()
-
+                
                 inputs = inputs.type(torch.LongTensor)
+                inputs, labels = inputs.to(device), labels.to(device)
                 output, val_h = net(inputs, val_h)
                 val_loss = criterion(output.squeeze(), labels.float())
 
@@ -372,6 +368,8 @@ for e in range(epochs):
                   "Step: {}...".format(counter),
                   "Loss: {:.6f}...".format(loss.item()),
                   "Val Loss: {:.6f}".format(np.mean(val_losses)))
+
+torch.save(net, '/home/carter/src/TDS-LSTM-Tutorial/model.pt')
 
 ########################
 # Testing 
@@ -392,11 +390,10 @@ for inputs, labels in test_loader:
     # we'd backprop through the entire training history
     h = tuple([each.data for each in h])
 
-    if(train_on_gpu):
-        inputs, labels = inputs.cuda(), labels.cuda()
     
     # get predicted outputs
     inputs = inputs.type(torch.LongTensor)
+    inputs, labels = inputs.to(device), labels.to(device)
     output, h = net(inputs, h)
     
     # calculate loss
@@ -408,7 +405,7 @@ for inputs, labels in test_loader:
     
     # compare predictions to true label
     correct_tensor = pred.eq(labels.float().view_as(pred))
-    correct = np.squeeze(correct_tensor.numpy()) if not train_on_gpu else np.squeeze(correct_tensor.cpu().numpy())
+    correct = np.squeeze(correct_tensor.to('cpu').numpy())
     num_correct += np.sum(correct)
 
 
