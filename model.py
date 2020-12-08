@@ -331,7 +331,8 @@ for e in range(epochs):
         net.zero_grad()
 
         # Run the model
-        inputs = inputs.type(torch.LongTensor) # TODO: What?
+        inputs = inputs.type(torch.LongTensor) # Put inputs into long int form (needed for embedding layer lookup)
+
         inputs, labels = inputs.to(device), labels.to(device)
         output, h = net(inputs, h)
 
