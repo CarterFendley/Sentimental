@@ -4,6 +4,7 @@ import os
 print('\n-\tLoading py torch')
 import torch
 from string import punctuation
+from tqdm import tqdm
 
 dev = 'cpu'
 
@@ -23,7 +24,8 @@ def format_review(review):
 
 def load_set(directory):
     out = []
-    for filepath in os.listdir(directory):
+    total = len([name for name in os.listdir(directory) if os.path.isfile(name)])
+    for filepath in tqdm(os.listdir(directory), total=total):
         #print(filepath)
         with open(f'{directory}/{filepath}', 'r') as f:
             out.append(format_review(f.read()))
@@ -303,8 +305,11 @@ print(net)
 
 if True:
     print('\n-\tPre-training the embedding layer\n')
-
-
+    
+    # Save train_y
+    print(vocab_size)
+    np.save('/home/carter/src/TDS-LSTM-Tutorial/train_x.npy', train_x)
+    
     from skip_gram import SkipGram
     e = SkipGram(vocab_size)
     e.train(train_x, verbose=True)

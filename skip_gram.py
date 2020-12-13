@@ -2,13 +2,22 @@ import numpy as np
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader, TensorDataset
+from sklearn.preprocessing import MultiLabelBinarizer
 
+from tqdm import tqdm
 from util import to_one_hot, to_multi_hot
 
 DEFAULT_CONTEXT_SIZE = 5
 DEFAULT_EMBEDDING_DIM = 100
 DEFAULT_BATCH_SIZE = 50
 DEFAULT_EPOCH_SIZE = 3
+
+dev = 'cpu'
+
+if torch.cuda.is_available():
+    dev = 'cuda'
+
+DEFAULT_DEVICE = torch.device(dev)
 
 class SkipGram(nn.Module):
 
@@ -27,65 +36,102 @@ class SkipGram(nn.Module):
         self.activation = nn.LogSoftmax(self.vocab_size)
     
     def forward(self, x):
-        x = self.emedding(x) # Embed one-hot encoded input
-        y = self.linear(x) # Map embedding to vocabulary
-        out = self.activation(y) # Run y through activation function
+        out = self.emedding(x) # Embed one-hot encoded input
+        out = self.linear(out) # Map embedding to vocabulary
+        out = self.activation(out) # Run y through activation function
 
         return out
     
-    def train(self, tokenized_corpus, batch_size=DEFAULT_BATCH_SIZE, epochs=DEFAULT_EPOCH_SIZE, verbose=False):
-        # Create word context pairs
-        x = []
-        y = []
+def train_skip_gram(model, tokenized_corpus, exclude_tokens=None, batch_size=DEFAULT_BATCH_SIZE, epochs=DEFAULT_EPOCH_SIZE, device=DEFAULT_DEVICE, verbose=False):
+    # Create word context pairs
+    x = []
+    y = []
 
+    if verbose:
+        print('Generating dataset from context')
+
+    for entry in tqdm(tokenized_corpus, total=len(tokenized_corpus)):
+        entry_length = len(entry)
+        for pos, center_word in enumerate(entry):
+            if exclude_tokens is not None and center_word in exclude_tokens:
+                continue # Skip excluded
+
+            # Iterate over context positions (inclusive bounds)
+            context = []
+            for delta in range(-model.context_size, model.context_size +1):
+                context_pos = pos + delta
+
+                # Make sure pos valid and not zero delta
+                if context_pos < 0 or context_pos >= entry_length or context_pos == pos:
+                    continue
+
+                # Add new pair
+                context.append(entry[context_pos])
+            x.append((center_word, )) # Iterable needed for sklearn MLB
+            y.append(context)
+        break
+
+    if verbose:
+        print('Putting labels in binary form')
+    
+    mlb = MultiLabelBinarizer()
+    labels = [i for i in range(model.vocab_size+1)] # Inclusive bounds
+    mlb.fit([labels]) # MLB requires 2d list
+
+    x = mlb.transform(x)
+    y = mlb.transform(y)
+
+    if verbose:
+        import sys
+
+        print('X:')
+        print('\tExample', x[0])
+        print('\tlength:', len(x))
+        print('\tsize:', sys.getsizeof(x))
+        print('Y:')
+        print('\tExample', y[0])
+        print('\tlength:', len(y))
+        print('\tsize:', sys.getsizeof(y))
+
+
+    data = TensorDataset(
+        torch.tensor(x, dtype=torch.long),
+        torch.tensor(y, dtype=torch.long)
+    )
+    data_loader = DataLoader(data, shuffle=True, batch_size=batch_size)
+
+    if verbose:
+        print('Training model')
+
+    losses = []
+    loss_function = nn.NLLLoss()
+    optimizer = optim.SGD(model.parameters(), lr=0.001)
+
+    if verbose:
+        print('Moving model to', device)
+    model.to(device)
+
+    for epoch in range(epochs):
+        total_loss = 0
         if verbose:
-            print('Generating dataset from context')
+            print('Starting epoch', epoch)
+        counter = 0
+        for word, target in data_loader:
+            counter += 1
+            print(f'batch: {counter}', sys.getsizeof(word), sys.getsizeof(target), word.size())
 
-        for entry in tokenized_corpus:
-            for pos, center_word in enumerate(entry):
-                # Iterate over context positions (inclusive bounds)
-                for delta in range(-self.context_size, self.context_size +1):
-                    context_pos = pos + delta
+            x = word.to(device)
+            y_true = target.to(device)
 
-                    # Make sure pos valid and not zero delta
-                    if context_pos < 0 or context_pos >= len(entry) or context_pos == pos:
-                        continue
+            model.zero_grad()
 
-                    # Add new pair
-                    x.append(center_word)
-                    y.append(entry[context_pos])
+            y = model(x)
 
-        data = TensorDataset(
-            torch.tensor(x, dtype=torch.long),
-            torch.tensor(y, dtype=torch.long)
-        )
-        data_loader = DataLoader(data, shuffle=True, batch_size=batch_size)
+            loss = loss_function(y, y_true)
+            loss.backward()
+            optimizer.step()
 
-        if verbose:
-            print('Training model')
-        losses = []
-        loss_function = nn.NLLLoss()
-        optimizer = optim.SGD(self.parameters(), lr=0.001)
+            total_loss += loss.item()
 
-        for epoch in range(epochs):
-            total_loss = 0
-            for word, target in data_loader:
-                # Put input and output in one / multi hot form
-                x = to_one_hot(word, len(tokenized_corpus))
-                x = x.type(torch.LongTensor)
-
-                y_true = to_multi_hot(target, len(tokenized_corpus))
-                y_true = y_true.type(torch.LongTensor)
-
-                self.zero_grad()
-
-                y = self(x)
-
-                loss = loss_function(y, y_true)
-                loss.backward()
-                optimizer.step()
-
-                total_loss += loss.item()
-
-                print("Epoch: {}/{}...".format(e+1, epochs),
-                    "Loss: {:.6f}...".format(loss.item()))
+            print("Epoch: {}/{}...".format(e+1, epochs),
+                "Loss: {:.6f}...".format(loss.item()))
