@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 
 import os
 print('\n-\tLoading py torch')
@@ -299,6 +300,14 @@ print(net)
 ########################
 # Training 
 ########################
+
+if True:
+    print('\n-\tPre-training the embedding layer\n')
+
+
+    from skip_gram import SkipGram
+    e = SkipGram(vocab_size)
+    e.train(train_x, verbose=True)
 
 print('\n-\tTraining the model\n')
 # Loss and optimization functions
