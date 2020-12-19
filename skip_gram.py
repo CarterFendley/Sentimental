@@ -67,18 +67,18 @@ def train_skip_gram(model, tokenized_corpus, exclude_tokens=None, batch_size=DEF
 
                 # Add new pair
                 context.append(entry[context_pos])
-            x.append((center_word, )) # Iterable needed for sklearn MLB
+            x.append(center_word)
             y.append(context)
         break
 
     if verbose:
         print('Putting labels in binary form')
     
+    # Encode context as one-hot vecors
     mlb = MultiLabelBinarizer()
     labels = [i for i in range(model.vocab_size+1)] # Inclusive bounds
     mlb.fit([labels]) # MLB requires 2d list
 
-    x = mlb.transform(x)
     y = mlb.transform(y)
 
     if verbose:
@@ -116,7 +116,10 @@ def train_skip_gram(model, tokenized_corpus, exclude_tokens=None, batch_size=DEF
         if verbose:
             print('Starting epoch', epoch)
         counter = 0
-        for word, target in data_loader:
+        #for word, target in data_loader:
+
+        word, target = next(data_loader)
+        for i in range(100000):
             counter += 1
             print(f'batch: {counter}', sys.getsizeof(word), sys.getsizeof(target), word.size())
 
