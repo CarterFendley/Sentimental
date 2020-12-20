@@ -30,4 +30,4 @@ print(se.forward_backward_bits) # bits stored for forward and backward
 print(se.input_bits) # bits for input
 '''
 
-train_skip_gram(e, train_x, exclude_tokens=(0,), verbose=True, batch_size=1)
+train_skip_gram(e, train_x, exclude_tokens=(0,), verbose=True)

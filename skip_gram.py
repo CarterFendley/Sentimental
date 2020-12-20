@@ -33,7 +33,7 @@ class SkipGram(nn.Module):
 
         # Output
         self.linear = nn.Linear(self.embedding_size, self.vocab_size)
-        self.activation = nn.LogSoftmax(self.vocab_size)
+        self.activation = nn.LogSoftmax(1) # Preform softmax over the 1st feature deminson
     
     def forward(self, x):
         out = self.emedding(x) # Embed one-hot encoded input
@@ -50,36 +50,49 @@ def train_skip_gram(model, tokenized_corpus, exclude_tokens=None, batch_size=DEF
     if verbose:
         print('Generating dataset from context')
 
-    for entry in tqdm(tokenized_corpus, total=len(tokenized_corpus)):
-        entry_length = len(entry)
-        for pos, center_word in enumerate(entry):
-            if exclude_tokens is not None and center_word in exclude_tokens:
-                continue # Skip excluded
+    if False:
+        for entry in tqdm(tokenized_corpus, total=len(tokenized_corpus)):
+            entry_length = len(entry)
+            for pos, center_word in enumerate(entry):
+                if exclude_tokens is not None and center_word in exclude_tokens:
+                    continue # Skip excluded
 
-            # Iterate over context positions (inclusive bounds)
-            context = []
-            for delta in range(-model.context_size, model.context_size +1):
-                context_pos = pos + delta
+                # Iterate over context positions (inclusive bounds)
+                context = []
+                for delta in range(-model.context_size, model.context_size +1):
+                    context_pos = pos + delta
 
-                # Make sure pos valid and not zero delta
-                if context_pos < 0 or context_pos >= entry_length or context_pos == pos:
-                    continue
+                    # Make sure pos valid and not zero delta
+                    if context_pos < 0 or context_pos >= entry_length or context_pos == pos:
+                        continue
 
-                # Add new pair
-                context.append(entry[context_pos])
-            x.append(center_word)
-            y.append(context)
-        break
+                    # Add new pair
+                    x.append(center_word)
+                    y.append(entry[context_pos])
+                    context.append(entry[context_pos])
+    else:
+        print('Loading data from file')
+        x = np.load('/home/carter/src/TDS-LSTM-Tutorial/center_words.npy')
+        y = np.load('/home/carter/src/TDS-LSTM-Tutorial/context_targets.npy')
 
-    if verbose:
-        print('Putting labels in binary form')
-    
-    # Encode context as one-hot vecors
-    mlb = MultiLabelBinarizer()
-    labels = [i for i in range(model.vocab_size+1)] # Inclusive bounds
-    mlb.fit([labels]) # MLB requires 2d list
+    def pad_context_vectors(vectors):
+        pad_to = 2*model.context_size
 
-    y = mlb.transform(y)
+        # Create vector of zeros of 2*context_size for each vector
+        features = np.zeros((len(vectors), pad_to), dtype=int)
+
+
+        for i, v in enumerate(vectors):
+            l = len(v) # Get current length:
+
+            if l <= pad_to:
+                zeroes = list(np.zeros(pad_to - l))
+                new = zeroes + v
+            elif l > pad_to:
+                new = v
+            
+            features[i,:] = np.array(new) #TODO: What is the i,: syntax
+        return features
 
     if verbose:
         import sys
@@ -93,6 +106,9 @@ def train_skip_gram(model, tokenized_corpus, exclude_tokens=None, batch_size=DEF
         print('\tlength:', len(y))
         print('\tsize:', sys.getsizeof(y))
 
+    if True:
+        np.save('/home/carter/src/TDS-LSTM-Tutorial/center_words.npy', x)
+        np.save('/home/carter/src/TDS-LSTM-Tutorial/context_targets.npy', x)
 
     data = TensorDataset(
         torch.tensor(x, dtype=torch.long),
@@ -116,10 +132,11 @@ def train_skip_gram(model, tokenized_corpus, exclude_tokens=None, batch_size=DEF
         if verbose:
             print('Starting epoch', epoch)
         counter = 0
-        #for word, target in data_loader:
-
-        word, target = next(data_loader)
-        for i in range(100000):
+        
+        for word, target in data_loader:
+        #word, target = next(iter(data_loader))
+        #for i in range(100000):
+         
             counter += 1
             print(f'batch: {counter}', sys.getsizeof(word), sys.getsizeof(target), word.size())
 
@@ -129,6 +146,8 @@ def train_skip_gram(model, tokenized_corpus, exclude_tokens=None, batch_size=DEF
             model.zero_grad()
 
             y = model(x)
+            #print(y)
+            #print(y_true)
 
             loss = loss_function(y, y_true)
             loss.backward()
@@ -136,5 +155,5 @@ def train_skip_gram(model, tokenized_corpus, exclude_tokens=None, batch_size=DEF
 
             total_loss += loss.item()
 
-            print("Epoch: {}/{}...".format(e+1, epochs),
+            print("Epoch: {}/{}...".format(epoch+1, epochs),
                 "Loss: {:.6f}...".format(loss.item()))
