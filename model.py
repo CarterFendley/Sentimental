@@ -36,10 +36,10 @@ def load_set(directory):
 ##############
 print('\n-\tLoading Data')
 
-POSITIVE = load_set('data/train/pos')
-POSITIVE.extend(load_set('data/test/pos'))
-NEGATIVE = load_set('data/train/neg')
-NEGATIVE.extend(load_set('data/test/neg'))
+POSITIVE = load_set('data/imdb_raw/train/pos')
+POSITIVE.extend(load_set('data/imdb_raw/test/pos'))
+NEGATIVE = load_set('data/imdb_raw/train/neg')
+NEGATIVE.extend(load_set('data/imdb_raw/test/neg'))
 
 COMBINED = POSITIVE[:]
 COMBINED.extend(NEGATIVE)
@@ -306,6 +306,10 @@ print(net)
 if True:
     print('\n-\tPre-training the embedding layer\n')
     
+    print(type(train_x))
+    print(type(train_x[0]))
+    raise TypeError('Billy not bob')
+
     # Save train_y
     print(vocab_size)
     np.save('/home/carter/src/TDS-LSTM-Tutorial/train_x.npy', train_x)
