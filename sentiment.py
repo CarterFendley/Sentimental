@@ -55,8 +55,6 @@ def lstm_pipeline(hyperparameters):
         model, train_loader, test_loader, valid_loader, criterion, optimizer = make(config)
         print(model)
 
-        local_save(model)
-
         train(model, train_loader, criterion, optimizer, config)
 
         print('Saving model...')
