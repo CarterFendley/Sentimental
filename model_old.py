@@ -192,15 +192,45 @@ print('\n-\t Creating data loaders')
 from torch.utils.data import DataLoader, TensorDataset
 
 # Create tensor datasets
-train_data = TensorDataset(torch.from_numpy(train_x), torch.from_numpy(train_y))
-valid_data = TensorDataset(torch.from_numpy(valid_x), torch.from_numpy(valid_y))
-test_data = TensorDataset(torch.from_numpy(test_x), torch.from_numpy(test_y))
+train_data = None
+valid_data = None
+test_data = None
+if True: 
+    train_data = TensorDataset(torch.from_numpy(train_x), torch.from_numpy(train_y))
+    valid_data = TensorDataset(torch.from_numpy(valid_x), torch.from_numpy(valid_y))
+    test_data = TensorDataset(torch.from_numpy(test_x), torch.from_numpy(test_y))
+else:
+    from imdb_data import load_data
 
+    data = load_data(pad_to=400)
+    
+    train_data = TensorDataset(
+        torch.from_numpy(data['train_x']),
+        torch.from_numpy(data['train_y'])
+    )
+    test_data = TensorDataset(
+        torch.from_numpy(data['test_x']),
+        torch.from_numpy(data['test_y'])
+    )
+
+    valid_data = TensorDataset(
+        torch.from_numpy(data['valid_x']),
+        torch.from_numpy(data['valid_y'])
+    )
+
+train_loader = None
+valid_loader = None
+test_loader = None
 # Create data loaders
 batch_size = 50
-train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
-valid_loader = DataLoader(valid_data, shuffle=True, batch_size=batch_size)
-test_loader = DataLoader(test_data, shuffle=True, batch_size=batch_size)
+if True:
+    train_loader = DataLoader(train_data, shuffle=True, batch_size=batch_size)
+    valid_loader = DataLoader(valid_data, shuffle=True, batch_size=batch_size)
+    test_loader = DataLoader(test_data, shuffle=True, batch_size=batch_size)
+
+
+
+
 
 data_iter = iter(train_loader)
 sample_x, sample_y = data_iter.next()
@@ -303,7 +333,7 @@ print(net)
 # Training 
 ########################
 
-if True:
+if False:
     print('\n-\tPre-training the embedding layer\n')
     
     print(type(train_x))
@@ -330,15 +360,21 @@ counter = 0
 print_every = 100
 clip = 5 # gradient clipping TODO:What?
 
+if True:
+    from sentiment import lstm_config, make
+
+    net, train_loader, test_loader, valid_loader, criterion, optimizer = make(lstm_config)
 
 net.to(device)
 
 net.train()
 for e in range(epochs):
-    h = net.init_hidden(batch_size) # Init hidden state
+    h = net.init_hidden(batch_size, device) # Init hidden state
 
     # Batch loops
     for inputs, labels in train_loader:
+        print(inputs.shape)
+        print(labels.shape)
         counter += 1
 
         # Create new vars for the hidden state
@@ -353,6 +389,7 @@ for e in range(epochs):
 
         inputs, labels = inputs.to(device), labels.to(device)
         output, h = net(inputs, h)
+        print('Got output')
 
         # Calculate loss and backprop
         loss = criterion(output.squeeze(), labels.float())

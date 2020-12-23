@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 DIRNAME = os.path.dirname(__file__)
 SEQ_LENGTH = 400
 
-def load_raw_classes(data_dir):
+def load_raw_classes(data_dir='data/imdb_raw'):
     print('Loading positive reviews...')
     _test_dir = os.path.join(data_dir, 'test/pos')
     _train_dir = os.path.join(data_dir, 'train/pos') 
@@ -59,6 +59,23 @@ def saved_data_exists(cache_dir='data/cached_data_load'):
             return False
     return True
 
+def clean_cache(cache_dir='data/cached_data_load'):
+    remove_files = (
+        f'{cache_dir}/train_x.npy',
+        f'{cache_dir}/train_y.npy',
+        f'{cache_dir}/test_x.npy',
+        f'{cache_dir}/test_y.npy',
+        f'{cache_dir}/validate_x.npy',
+        f'{cache_dir}/validate_y.npy',
+        f'{cache_dir}/vocab_to_int.npy',
+        f'{cache_dir}/int_to_vocab.npy'
+    )
+
+    for path in remove_files:
+        if os.path.exists(path):
+                os.remove(path)
+    return True
+
 def preprocessing(vector):
     processed_vectors = []
     for i, review in tqdm(enumerate(vector)):
@@ -92,7 +109,7 @@ def tokenize_and_pad(review_vectors, mapping, pad_to=SEQ_LENGTH):
         if length <= pad_to:
             zeros = list(np.zeros(pad_to - length))
             review = zeros+review
-        elif review_len > pad_to:
+        elif length > pad_to:
             review = review[0:pad_to]
         
         tokenized_features[i,:] = np.array(review)
@@ -104,7 +121,7 @@ def load_data(positive=None, negative=None, preprocess_func=preprocessing,
              from_cache=False, cache_dir='data/cached_data_load', disable_caching=False,
              pad_to=SEQ_LENGTH):
     if saved_data_exists(cache_dir=cache_dir):
-        if not from_cache:
+        if not from_cache and not disable_caching:
             while True:
                 print('Found saved cached data load!')
                 c = input('Load data from cache [Y/n]:')
@@ -119,6 +136,7 @@ def load_data(positive=None, negative=None, preprocess_func=preprocessing,
         raise AssertionError('Cached data load either partial or non-existant')
 
     if from_cache:
+        print('Loading data from cache...')
         return {
             'train_x': np.load(f'{cache_dir}/train_x.npy'),
             'train_y': np.load(f'{cache_dir}/train_y.npy'),
@@ -126,7 +144,7 @@ def load_data(positive=None, negative=None, preprocess_func=preprocessing,
             'test_y': np.load(f'{cache_dir}/test_y.npy'),
             'valid_x': np.load(f'{cache_dir}/validate_x.npy'),
             'valid_y': np.load(f'{cache_dir}/validate_y.npy'),
-            'vocab_to_int': np.load(f'{cache_dir}/vocab_to_int.npy', allow_pickle=True).item(),
+            'vocab_to_int': np.load(f'{cache_dir}/vocab_to_int.npy', allow_pickle=True).item(), # Item pulls the dict out I think
             'int_to_vocab': np.load(f'{cache_dir}/int_to_vocab.npy', allow_pickle=True).item()
         }
 
@@ -210,8 +228,11 @@ def load_data(positive=None, negative=None, preprocess_func=preprocessing,
 
     # Cache data through numpy saves
     if not disable_caching:
+        print(f'Wiping out existing cache')
+        clean_cache(cache_dir=cache_dir)
         print(f'Caching current load in {cache_dir}...')
-        os.makedirs(cache_dir)
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
 
         np.save(f'{cache_dir}/train_x.npy', train_x)
         np.save(f'{cache_dir}/train_y.npy', train_y),

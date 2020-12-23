@@ -1,0 +1,14 @@
+# Byte-compiled / optimized / DLL files
+**/__pycache__/*
+*.py[cod]
+*$py.class
+
+# VSCode
+.vscode/*
+
+# Sentiment stuff
+data/cached_data_load/*
+data/model_saves/*
+wandb/*
+
+config.py
