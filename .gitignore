@@ -7,8 +7,8 @@
 .vscode/*
 
 # Sentiment stuff
-data/cached_data_load/*
-data/model_saves/*
+data/cache_imdb_data/*
+data/saved_models/*
 wandb/*
 
 config.py

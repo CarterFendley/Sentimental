@@ -1,15 +1,23 @@
+import re
 import os
 import numpy as np
 from tqdm import tqdm
+from hashlib import sha256
 from string import punctuation
 from collections import Counter
+
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 DIRNAME = os.path.dirname(__file__)
 SEQ_LENGTH = 400
 
-def load_raw_classes(data_dir='data/imdb_raw'):
+DEFAULT_IMDB_DIR = os.path.join(DIRNAME, 'data/imdb_raw')
+DEFAULT_CACHE_DIR = os.path.join(DIRNAME, 'data/cache_imdb_data')
+
+UTF_8 = 'utf-8'
+
+def load_raw_classes(data_dir=DEFAULT_IMDB_DIR):
     print('Loading positive reviews...')
     _test_dir = os.path.join(data_dir, 'test/pos')
     _train_dir = os.path.join(data_dir, 'train/pos') 
@@ -42,16 +50,80 @@ def load_raw_classes(data_dir='data/imdb_raw'):
     
     return positive, negative
 
-def saved_data_exists(cache_dir='data/cached_data_load'):
+##############################
+# Caching Helper Functions   #
+##############################
+
+def get_hash_type(string):
+    v1_pattern = 'v1-[a-z0-9]+'
+
+    if re.fullmatch(v1_pattern, string):
+        return 'v1'
+
+def validate_v1_data(data):
+    subsets = (
+        'train_x',
+        'train_y',
+        'test_x',
+        'test_y',
+        'valid_x',
+        'valid_y'
+    )
+
+    # Assert types
+    for subset in subsets:
+        assert type(data[subset]) == np.ndarray, 'Subsets should be numpy arrays'
+    assert type(data['vocab_to_int']) == dict, 'Mapping functions should be dictionaries'
+    assert type(data['int_to_vocab']) == dict, 'Mapping functions should be dictionaries'
+
+def create_hash_string_v1(data):
+    hash_list = [
+        data['train_x'],
+        data['train_y'],
+        data['test_x'],
+        data['test_y'],
+        data['valid_x'],
+        data['valid_y'],
+        data['vocab_to_int'],
+        data['int_to_vocab']
+    ]
+
+    hashes = ''.join([sha256(str(x).encode(UTF_8)).hexdigest() for x in hash_list])
+
+    return f'v1-{sha256(hashes.encode(UTF_8)).hexdigest()}'
+
+def get_latest_cache_path(_cache_dir=DEFAULT_CACHE_DIR):
+    return os.path.join(_cache_dir, 'latest')
+
+def latest_cache_exists(latest_cache=None, _cache_dir=DEFAULT_CACHE_DIR):
+    if latest_cache is None:
+        latest_cache = get_latest_cache_path(_cache_dir=_cache_dir)
+
+    if os.path.exists(latest_cache) and os.path.islink(latest_cache):
+        return True
+
+    return False
+
+def update_latest_cache(cache_path, _cache_dir=DEFAULT_CACHE_DIR):
+    latest_cache = get_latest_cache_path(_cache_dir=_cache_dir)
+    
+    if latest_cache_exists(latest_cache=latest_cache):
+        # Replace link
+        os.remove(latest_cache)
+
+    os.symlink(cache_path, latest_cache)
+
+def is_valid_cache(cache_path):
     check_files = (
-        f'{cache_dir}/train_x.npy',
-        f'{cache_dir}/train_y.npy',
-        f'{cache_dir}/test_x.npy',
-        f'{cache_dir}/test_y.npy',
-        f'{cache_dir}/validate_x.npy',
-        f'{cache_dir}/validate_y.npy',
-        f'{cache_dir}/vocab_to_int.npy',
-        f'{cache_dir}/int_to_vocab.npy'
+        f'{cache_path}/train_x.npy',
+        f'{cache_path}/train_y.npy',
+        f'{cache_path}/test_x.npy',
+        f'{cache_path}/test_y.npy',
+        f'{cache_path}/validate_x.npy',
+        f'{cache_path}/validate_y.npy',
+        f'{cache_path}/vocab_to_int.npy',
+        f'{cache_path}/int_to_vocab.npy',
+        f'{cache_path}/hash.txt'
     )
 
     for path in check_files:
@@ -59,24 +131,74 @@ def saved_data_exists(cache_dir='data/cached_data_load'):
             return False
     return True
 
-def clean_cache(cache_dir='data/cached_data_load'):
-    remove_files = (
-        f'{cache_dir}/train_x.npy',
-        f'{cache_dir}/train_y.npy',
-        f'{cache_dir}/test_x.npy',
-        f'{cache_dir}/test_y.npy',
-        f'{cache_dir}/validate_x.npy',
-        f'{cache_dir}/validate_y.npy',
-        f'{cache_dir}/vocab_to_int.npy',
-        f'{cache_dir}/int_to_vocab.npy'
-    )
+def save_to_cache(data, _cache_dir=DEFAULT_CACHE_DIR, _hash_label=None):
+    if _hash_label is None:
+        _hash_label = create_hash_string_v1(data)
 
-    for path in remove_files:
-        if os.path.exists(path):
-                os.remove(path)
-    return True
+    data_cache_path = os.path.join(_cache_dir, _hash_label)
+    # Check cache for hit on hash
+    if not os.path.exists(data_cache_path):
+        # If no cache hit, save in cache
+        os.makedirs(data_cache_path)
 
-def preprocessing(vector):
+        np.save(f'{data_cache_path}/train_x.npy', data['train_x'])
+        np.save(f'{data_cache_path}/train_y.npy', data['train_y'])
+        np.save(f'{data_cache_path}/test_x.npy', data['test_x'])
+        np.save(f'{data_cache_path}/test_y.npy', data['test_y'])
+        np.save(f'{data_cache_path}/validate_x.npy', data['valid_x'])
+        np.save(f'{data_cache_path}/validate_y.npy', data['valid_y'])
+        np.save(f'{data_cache_path}/vocab_to_int.npy', data['vocab_to_int'])
+        np.save(f'{data_cache_path}/int_to_vocab.npy', data['int_to_vocab'])
+
+        with open(f'{data_cache_path}/hash.txt', 'w') as f:
+            f.write(_hash_label)
+    elif not os.path.isdir(data_cache_path) or not is_valid_cache(data_cache_path):
+        raise AssertionError('Cache corrupted (either not a dir or files missing)!')
+    
+    update_latest_cache(data_cache_path, _cache_dir=_cache_dir)
+
+def save_processed_data(data, save_dir, _cache_dir=None):
+    if _cache_dir is None:
+        _cache_dir = DEFAULT_CACHE_DIR
+
+    validate_v1_data(data)
+    hash_label = create_hash_string_v1(data)
+
+    save_dir = os.path.join(save_dir)
+    data_cache_path = os.path.join(_cache_dir, hash_label)
+    
+    save_to_cache(data, _cache_dir=_cache_dir, _hash_label=hash_label)
+
+    # Symlink to directory
+    os.symlink(data_cache_path, save_dir)
+    # Update the link to the latest
+
+def load_processed_data(cache_path=get_latest_cache_path()):
+    # Check cache files
+    assert is_valid_cache(cache_path)
+
+    # Load data
+    data = {
+            'train_x': np.load(f'{cache_path}/train_x.npy'),
+            'train_y': np.load(f'{cache_path}/train_y.npy'),
+            'test_x': np.load(f'{cache_path}/test_x.npy'),
+            'test_y': np.load(f'{cache_path}/test_y.npy'),
+            'valid_x': np.load(f'{cache_path}/validate_x.npy'),
+            'valid_y': np.load(f'{cache_path}/validate_y.npy'),
+            'vocab_to_int': np.load(f'{cache_path}/vocab_to_int.npy', allow_pickle=True).item(), # Item pulls the dict out I think
+            'int_to_vocab': np.load(f'{cache_path}/int_to_vocab.npy', allow_pickle=True).item()
+    }
+
+    # Validate format of data
+    validate_v1_data(data)
+
+    return data
+
+######################
+# Data Processing    #
+######################
+
+def filter_reviews(vector):
     processed_vectors = []
     for i, review in tqdm(enumerate(vector)):
         # Convert to lower case
@@ -116,42 +238,32 @@ def tokenize_and_pad(review_vectors, mapping, pad_to=SEQ_LENGTH):
     
     return tokenized_features
 
-
-def load_data(positive=None, negative=None, preprocess_func=preprocessing,
-             from_cache=False, cache_dir='data/cached_data_load', disable_caching=False,
-             pad_to=SEQ_LENGTH):
-    if saved_data_exists(cache_dir=cache_dir):
-        if not from_cache and not disable_caching:
-            while True:
-                print('Found saved cached data load!')
-                c = input('Load data from cache [Y/n]:')
-                c = c.lower()
-                if c in ('yes', 'y', ''):
-                    from_cache = True
-                    break
-                elif c in ('no', 'n'):
-                    from_cache = False
-                    break
-    elif from_cache:
-        raise AssertionError('Cached data load either partial or non-existant')
-
-    if from_cache:
-        print('Loading data from cache...')
-        return {
-            'train_x': np.load(f'{cache_dir}/train_x.npy'),
-            'train_y': np.load(f'{cache_dir}/train_y.npy'),
-            'test_x': np.load(f'{cache_dir}/test_x.npy'),
-            'test_y': np.load(f'{cache_dir}/test_y.npy'),
-            'valid_x': np.load(f'{cache_dir}/validate_x.npy'),
-            'valid_y': np.load(f'{cache_dir}/validate_y.npy'),
-            'vocab_to_int': np.load(f'{cache_dir}/vocab_to_int.npy', allow_pickle=True).item(), # Item pulls the dict out I think
-            'int_to_vocab': np.load(f'{cache_dir}/int_to_vocab.npy', allow_pickle=True).item()
-        }
+def load_data(
+    positive=None,
+    negative=None,
+    preprocess_func=filter_reviews,
+    pad_to=SEQ_LENGTH,
+    ignore_cache=False,
+    _cache_dir=DEFAULT_CACHE_DIR,
+    imdb_data_dir=DEFAULT_IMDB_DIR,
+    write_to_cache=True):
 
     if positive is None or negative is None:
-        print('Loading classes data from file...')
+        if not ignore_cache:
+            if latest_cache_exists(_cache_dir=_cache_dir):
+                while True:
+                    print('Found saved cached data load!')
+                    c = input('Load data from cache [Y/n]:')
+                    c = c.lower()
+                    if c in ('yes', 'y', ''):
+                        return load_processed_data()
+                    elif c in ('no', 'n'):
+                        break
+            print('No cache found!')
+        
+        print('Genertating data...')
         positive, negative = load_raw_classes()
-
+    
     print('Preprocessing positive reviews...')
     positive = preprocess_func(positive)
     print('Preprocessing negative reviews...')
@@ -226,24 +338,7 @@ def load_data(positive=None, negative=None, preprocess_func=preprocessing,
     print('\tTest:', len(test_x))
     print('\tValidate:', len(valid_x))
 
-    # Cache data through numpy saves
-    if not disable_caching:
-        print(f'Wiping out existing cache')
-        clean_cache(cache_dir=cache_dir)
-        print(f'Caching current load in {cache_dir}...')
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir)
-
-        np.save(f'{cache_dir}/train_x.npy', train_x)
-        np.save(f'{cache_dir}/train_y.npy', train_y),
-        np.save(f'{cache_dir}/test_x.npy', test_x),
-        np.save(f'{cache_dir}/test_y.npy', test_y),
-        np.save(f'{cache_dir}/validate_x.npy', valid_x),
-        np.save(f'{cache_dir}/validate_y.npy', valid_y),
-        np.save(f'{cache_dir}/vocab_to_int.npy', vocab_to_int)
-        np.save(f'{cache_dir}/int_to_vocab.npy', int_to_vocab)
-
-    return {
+    data = {
         'train_x': train_x,
         'train_y': train_y,
         'valid_x': valid_x,
@@ -253,3 +348,8 @@ def load_data(positive=None, negative=None, preprocess_func=preprocessing,
         'vocab_to_int': vocab_to_int,
         'int_to_vocab': int_to_vocab
     }
+
+    if write_to_cache:
+        save_to_cache(data, _cache_dir=_cache_dir)
+
+    return data
