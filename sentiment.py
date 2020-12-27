@@ -60,7 +60,8 @@ def lstm_pipeline(hyperparameters):
 
 def make(config):
     data = load_data(
-        pad_to=config['seq_len']
+        pad_to=config['seq_len'],
+        confirmation=False
     )
 
     train_loader = make_loader((data['train_x'], data['train_y']), batch_size=config['batch_size'])
@@ -134,7 +135,7 @@ def train(model, loader, valid_loader, criterion, optimizer, config):
                 if False: print('Loging info')
                 train_log(loss, example_ct, epoch)
 
-                if ((batch_ct + 1) % 100) == 0:
+                if ((batch_ct + 1) % 300) == 0:
                     # Flush cause TQDM hates me
                     print('', flush=True)
                     print('Calculating validation...')
@@ -144,8 +145,8 @@ def train(model, loader, valid_loader, criterion, optimizer, config):
                     print(f"\tValidation Accuracy: {score['accuracy']}\n", flush=True)
 
                     wandb.log({
-                        'valid_loss': score['mean_loss'],
-                        'valid_accuracy': score['accuracy']
+                        'validation_loss': score['mean_loss'],
+                        'validation_accuracy': score['accuracy']
                     })
 
 def train_log(loss, example_ct, epoch):
