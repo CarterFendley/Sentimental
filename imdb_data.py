@@ -246,19 +246,23 @@ def load_data(
     ignore_cache=False,
     _cache_dir=DEFAULT_CACHE_DIR,
     imdb_data_dir=DEFAULT_IMDB_DIR,
-    write_to_cache=True):
+    write_to_cache=True,
+    confirmation=True):
 
     if positive is None or negative is None:
         if not ignore_cache:
             if latest_cache_exists(_cache_dir=_cache_dir):
-                while True:
-                    print('Found saved cached data load!')
-                    c = input('Load data from cache [Y/n]:')
-                    c = c.lower()
-                    if c in ('yes', 'y', ''):
-                        return load_processed_data()
-                    elif c in ('no', 'n'):
-                        break
+                if confirmation:
+                    while True:
+                        print('Found saved cached data load!')
+                        c = input('Load data from cache [Y/n]:')
+                        c = c.lower()
+                        if c in ('yes', 'y', ''):
+                            return load_processed_data()
+                        elif c in ('no', 'n'):
+                            break
+                else:
+                    return load_processed_data()
             print('No cache found!')
         
         print('Genertating data...')
