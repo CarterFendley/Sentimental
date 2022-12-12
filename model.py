@@ -300,120 +300,127 @@ print(net)
 # Training 
 ########################
 
-print('\n-\tTraining the model\n')
-# Loss and optimization functions
-lr = 0.001 # Learning rate
-criterion = nn.BCELoss()
-optimizer = torch.optim.Adam(net.parameters(), lr=lr)
+# Just a container to run the training code, looks kinda pythonic right?
+class Runner:
+    def __init__(self):
+        # Loss and optimization functions
+        self.criterion = nn.BCELoss()
+        self.optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
 
-# Training params
-epochs = 4 # TODO: Play with this and look validation loss
-counter = 0
-print_every = 100
-clip = 5 # gradient clipping TODO:What?
+        # Training params
+        self.epochs = 4 # TODO: Play with this and look validation loss
+        self.counter = 0
+        self.print_every = 100
+        self.clip = 5 # gradient clipping TODO:What?
 
+    def train(self):
+        print(f'\n-\tMoving model to {device}\n')
+        net.to(device)
+        print('\n-\tTraining the model\n')
 
-net.to(device)
-
-net.train()
-for e in range(epochs):
-    h = net.init_hidden(batch_size) # Init hidden state
-
-    # Batch loops
-    for inputs, labels in train_loader:
-        counter += 1
-
-        # Create new vars for the hidden state
-        # Prevents backprop through entire training history TODO: What?
-        h = tuple([each.data for each in h])
-
-        # zero accumulate gradients TODO:WHAT?
-        net.zero_grad()
-
-        # Run the model
-        inputs = inputs.type(torch.LongTensor) # Put inputs into long int form (needed for embedding layer lookup)
-
-        inputs, labels = inputs.to(device), labels.to(device)
-        output, h = net(inputs, h)
-
-        # Calculate loss and backprop
-        loss = criterion(output.squeeze(), labels.float())
-        loss.backward()
-        # clip_grad_normal helps prevent the exploding gradient problem in RNNs / LSTM
-        nn.utils.clip_grad_norm_(net.parameters(), clip)
-        optimizer.step()
-
-        # Loss stats
-        if counter % print_every == 0:
-            print('Calculating validation...')
-            # Get calidation loss
-            val_h = net.init_hidden(batch_size)
-            val_losses = []
+        net.train()
+        #e_bar = tqdm(count=self.epocs)
+        for e in tqdm(range(self.epochs)):
             
-            net.eval() # TODO: What?
+            #e_bar.update(1)
+            h = net.init_hidden(batch_size) # Init hidden state
 
-            for inputs, labels in valid_loader:
-                # Creating new variables for the hidden state, otherwise
-                # we'd backprop through the entire training history
-                val_h = tuple([each.data for each in val_h])
-                
-                inputs = inputs.type(torch.LongTensor)
+            # Batch loops
+
+            for inputs, labels in tqdm(train_loader):
+                self.counter += 1
+
+                # Create new vars for the hidden state
+                # Prevents backprop through entire training history TODO: What?
+                h = tuple([each.data for each in h])
+
+                # zero accumulate gradients TODO:WHAT?
+                net.zero_grad()
+
+                # Run the model
+                inputs = inputs.type(torch.LongTensor) # Put inputs into long int form (needed for embedding layer lookup)
+
                 inputs, labels = inputs.to(device), labels.to(device)
-                output, val_h = net(inputs, val_h)
-                val_loss = criterion(output.squeeze(), labels.float())
+                output, h = net(inputs, h)
 
-                val_losses.append(val_loss.item())
-            
-            net.train()
-            print("Epoch: {}/{}...".format(e+1, epochs),
-                  "Step: {}...".format(counter),
-                  "Loss: {:.6f}...".format(loss.item()),
-                  "Val Loss: {:.6f}".format(np.mean(val_losses)))
+                # Calculate loss and backprop
+                loss = self.criterion(output.squeeze(), labels.float())
+                loss.backward()
+                # clip_grad_normal helps prevent the exploding gradient problem in RNNs / LSTM
+                nn.utils.clip_grad_norm_(net.parameters(), self.clip)
+                self.optimizer.step()
 
-torch.save(net, '/home/carter/src/TDS-LSTM-Tutorial/model.pt')
+                # Loss stats
+                if self.counter % self.print_every == 0:
+                    print('Calculating validation...')
+                    # Get calidation loss
+                    val_h = net.init_hidden(batch_size)
+                    val_losses = []
 
-########################
-# Testing 
-########################
+                    net.eval() # TODO: What?
 
-print('\n-\Testing the model\n')
+                    for inputs, labels in valid_loader:
+                        # Creating new variables for the hidden state, otherwise
+                        # we'd backprop through the entire training history
+                        val_h = tuple([each.data for each in val_h])
 
-test_losses = [] # Track loss
-num_correct = 0
+                        inputs = inputs.type(torch.LongTensor)
+                        inputs, labels = inputs.to(device), labels.to(device)
+                        output, val_h = net(inputs, val_h)
+                        val_loss = self.criterion(output.squeeze(), labels.float())
 
-# init hidden state
-h = net.init_hidden(batch_size)
+                        val_losses.append(val_loss.item())
 
-net.eval()
-# Interate over test data
-for inputs, labels in test_loader:
-    # Creating new variables for the hidden state, otherwise
-    # we'd backprop through the entire training history
-    h = tuple([each.data for each in h])
+                    net.train()
+                    print("Epoch: {}/{}...".format(e+1, self.epochs),
+                          "Step: {}...".format(self.counter),
+                          "Loss: {:.6f}...".format(loss.item()),
+                          "Val Loss: {:.6f}".format(np.mean(val_losses)))
 
-    
-    # get predicted outputs
-    inputs = inputs.type(torch.LongTensor)
-    inputs, labels = inputs.to(device), labels.to(device)
-    output, h = net(inputs, h)
-    
-    # calculate loss
-    test_loss = criterion(output.squeeze(), labels.float())
-    test_losses.append(test_loss.item())
-    
-    # convert output probabilities to predicted class (0 or 1)
-    pred = torch.round(output.squeeze())  # rounds to the nearest integer
-    
-    # compare predictions to true label
-    correct_tensor = pred.eq(labels.float().view_as(pred))
-    correct = np.squeeze(correct_tensor.to('cpu').numpy())
-    num_correct += np.sum(correct)
+        torch.save(net, '/home/carter/src/Sentimental/model.pt')
+
+        ########################
+        # Testing 
+        ########################
+
+        print('\n-\Testing the model\n')
+
+        test_losses = [] # Track loss
+        num_correct = 0
+
+        # init hidden state
+        h = net.init_hidden(batch_size)
+
+        net.eval()
+        # Interate over test data
+        for inputs, labels in test_loader:
+            # Creating new variables for the hidden state, otherwise
+            # we'd backprop through the entire training history
+            h = tuple([each.data for each in h])
 
 
-# -- stats! -- ##
-# avg test loss
-print("Test loss: {:.3f}".format(np.mean(test_losses)))
+            # get predicted outputs
+            inputs = inputs.type(torch.LongTensor)
+            inputs, labels = inputs.to(device), labels.to(device)
+            output, h = net(inputs, h)
 
-# accuracy over all test data
-test_acc = num_correct/len(test_loader.dataset)
-print("Test accuracy: {:.3f}".format(test_acc))
+            # calculate loss
+            test_loss = self.criterion(output.squeeze(), labels.float())
+            test_losses.append(test_loss.item())
+
+            # convert output probabilities to predicted class (0 or 1)
+            pred = torch.round(output.squeeze())  # rounds to the nearest integer
+
+            # compare predictions to true label
+            correct_tensor = pred.eq(labels.float().view_as(pred))
+            correct = np.squeeze(correct_tensor.to('cpu').numpy())
+            num_correct += np.sum(correct)
+
+
+        # -- stats! -- ##
+        # avg test loss
+        print("Test loss: {:.3f}".format(np.mean(test_losses)))
+
+        # accuracy over all test data
+        test_acc = num_correct/len(test_loader.dataset)
+        print("Test accuracy: {:.3f}".format(test_acc))
